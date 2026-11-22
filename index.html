@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MK Vision Stabilizer</title>
+<style>
+  :root { --bg:#0b0d12; --panel:#141821; --line:#232938; --text:#e8ecf4; --mute:#8a93a6; --acc:#ff7a1a; --acc2:#ffb547; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:18px 20px 6px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; letter-spacing:.2px; }
+  header h1 b { color:var(--acc); }
+  header span { color:var(--mute); font-size:13px; }
+  main { display:grid; grid-template-columns: 1fr 300px; gap:16px; padding:12px 20px 24px; max-width:1400px; margin:0 auto; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding:10px 12px 20px; } }
+  .stage { background:#000; border:1px solid var(--line); border-radius:12px; overflow:hidden; position:relative; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; }
+  .stage canvas { width:100%; height:100%; object-fit:contain; display:block; }
+  .drop { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--mute); text-align:center; padding:20px; cursor:pointer; }
+  .drop strong { color:var(--text); font-size:17px; }
+  .drop.over { background:rgba(255,122,26,.08); outline:2px dashed var(--acc); outline-offset:-10px; }
+  .badge { position:absolute; top:10px; font-size:12px; background:rgba(0,0,0,.6); padding:3px 8px; border-radius:6px; pointer-events:none; }
+  .controls { display:flex; gap:10px; align-items:center; margin-top:10px; }
+  .controls input[type=range] { flex:1; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:16px; align-self:start; }
+  .panel h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--mute); font-weight:600; }
+  .seg { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .seg button { padding:9px 4px; font-size:13px; }
+  .seg button.on { background:var(--acc); border-color:var(--acc); color:#111; font-weight:600; }
+  .hint { color:var(--mute); font-size:12.5px; margin-top:6px; }
+  button { background:#1d2230; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 14px; font:inherit; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:#3a4256; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.primary { background:linear-gradient(135deg,var(--acc),var(--acc2)); color:#111; border:0; font-weight:650; }
+  select { width:100%; background:#1d2230; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:inherit; }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  .row { display:flex; justify-content:space-between; font-size:13px; }
+  .bar { height:6px; background:#1d2230; border-radius:3px; overflow:hidden; }
+  .bar i { display:block; height:100%; width:0; background:linear-gradient(90deg,var(--acc),var(--acc2)); transition:width .15s; }
+  .status { font-size:13px; color:var(--mute); min-height:1.4em; }
+  .stat { font-size:13px; background:#0f1219; border:1px solid var(--line); border-radius:8px; padding:10px; }
+  .stat b { color:var(--acc2); font-size:18px; }
+  .vh { position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none; }
+  .pick, .pick2 { display:inline-block; margin-top:6px; padding:10px 18px; border-radius:8px; background:linear-gradient(135deg,var(--acc),var(--acc2)); color:#111; font-weight:650; cursor:pointer; }
+  .pick2 { background:#1d2230; color:var(--text); border:1px solid var(--line); text-align:center; font-weight:500; margin:0; }
+  label.chk { display:flex; gap:8px; align-items:center; font-size:14px; cursor:pointer; }
+</style>
+</head>
+<body>
+<header><h1>MK Vision <b>Stabilizer</b></h1><span>Steadies handheld clips in your browser. Your video never leaves your device.</span></header>
+<main>
+  <section>
+    <div class="stage" id="stage">
+      <canvas id="view" width="1280" height="720"></canvas>
+      <label class="drop" id="drop" for="file"><strong>Tap to choose a video</strong><span>or drop one here (MP4, MOV, WebM)</span><span class="pick">Choose video</span></label>
+      <span class="badge" id="bL" style="left:10px;display:none">Original</span>
+      <span class="badge" id="bR" style="right:10px;display:none">Stabilized</span>
+    </div>
+    <div class="controls">
+      <button id="play" disabled>▶ Play</button>
+      <input type="range" id="seek" min="0" max="1000" value="0" disabled>
+      <label class="chk"><input type="checkbox" id="cmp"> Compare</label>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div>
+      <h3>Stabilization</h3>
+      <div class="seg" id="modes">
+        <button data-m="lock" class="on">Tripod lock</button>
+        <button data-m="cinematic">Cinematic</button>
+        <button data-m="natural">Natural</button>
+      </div>
+      <div class="hint" id="modeHint">Holds the shot still, like the camera is on a tripod.</div>
+    </div>
+    <div>
+      <div class="row"><h3>Crop room</h3><span id="cropV">20%</span></div>
+      <input type="range" id="crop" min="5" max="30" value="20">
+      <div class="hint">More crop gives the stabilizer more room to cancel shake.</div>
+    </div>
+    <div>
+      <div class="row"><h3>Strength</h3><span id="strV">100%</span></div>
+      <input type="range" id="str" min="10" max="150" step="5" value="100">
+      <div class="hint">Smoothness for Cinematic and Natural modes.</div>
+    </div>
+    <div>
+      <h3>Edges</h3>
+      <select id="fill">
+        <option value="blur">Soft blur fill (recommended)</option>
+        <option value="previous">Fill from earlier frames</option>
+        <option value="black">Black borders</option>
+        <option value="zoom">Zoom crop only (never shows edges)</option>
+      </select>
+    </div>
+    <div>
+      <div style="display:flex;gap:8px"><button class="primary" id="go" disabled style="flex:1">Stabilize</button><button id="cancel" style="display:none">Cancel</button></div>
+      <div class="bar" style="margin-top:10px"><i id="prog"></i></div>
+      <div class="status" id="status">Load a video to start.</div>
+    </div>
+    <div class="stat" id="stat" style="display:none"></div>
+    <button id="export" disabled>⬇ Export stabilized video</button>
+    <label class="pick2" for="file2">Open another video</label>
+    <input type="file" id="file" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" class="vh">
+    <input type="file" id="file2" accept="video/*,.mp4,.mov,.webm,.mkv,.m4v" class="vh">
+  </aside>
+</main>
+
+<script src="mk-stabilizer.js"></script>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const view = $('view'), ctx = view.getContext('2d');
+  let stab = null, video = null, analysed = false, playing = false, busy = false;
+  const hints = {
+    lock: 'Holds the shot still, like the camera is on a tripod.',
+    cinematic: 'A slow, smooth glide that still follows where you point.',
+    natural: 'Light smoothing that keeps more of the picture.',
+  };
+  let mode = 'lock';
+
+  // ---------- loading ----------
+  const drop = $('drop');
+  const onPick = e => { const f = e.target.files && e.target.files[0]; if (f) open(f); e.target.value = ''; };
+  $('file').addEventListener('change', onPick);
+  $('file2').addEventListener('change', onPick);
+  ['dragenter','dragover'].forEach(t => $('stage').addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave','drop'].forEach(t => $('stage').addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  $('stage').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) open(f); });
+
+  async function open(file) {
+    if (busy) return;
+    stop();
+    if (stab) stab.dispose();
+    stab = new MKStabilizer(); analysed = false;
+    setStatus('Loading video…'); setProg(0);
+    try {
+      setStatus('Loading ' + file.name + '…');
+      const info = await Promise.race([stab.load(file), new Promise((_, rej) => setTimeout(() => rej(new Error('this browser could not decode the video (try an MP4 in Chrome)')), 20000))]);
+      video = stab.video;
+      const s = Math.min(1, 1280 / info.width);
+      view.width = Math.round(info.width * s); view.height = Math.round(info.height * s);
+      $('stage').style.aspectRatio = `${info.width}/${info.height}`;
+      drop.style.display = 'none';
+      ['go','play','seek'].forEach(id => $(id).disabled = false);
+      $('export').disabled = true; $('stat').style.display = 'none';
+      setStatus(`${info.width}×${info.height}, ${info.fps} fps, ${info.duration.toFixed(1)} s. Press Stabilize.`);
+      video.currentTime = 0;
+      video.addEventListener('seeked', () => !playing && !busy && draw(video.currentTime));
+      setTimeout(() => draw(0), 200);
+    } catch (e) { setStatus('Could not open this video: ' + e.message); }
+  }
+
+  // ---------- options ----------
+  $('modes').onclick = async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...$('modes').children].forEach(x => x.classList.toggle('on', x === b));
+    mode = b.dataset.m; $('modeHint').textContent = hints[mode];
+    await apply();
+  };
+  $('crop').oninput = () => { $('cropV').textContent = $('crop').value + '%'; };
+  $('crop').onchange = apply;
+  $('fill').onchange = apply;
+  $('str').oninput = () => { $('strV').textContent = $('str').value + '%'; };
+  $('str').onchange = apply;
+  const cur = () => ({ mode, crop: $('crop').value / 100, edgeFill: $('fill').value, strength: $('str').value / 100 });
+  async function apply() {
+    if (!stab || !analysed) return;
+    const st = await stab.configure(cur());
+    showStats(st);
+    if (!playing) draw(video.currentTime);
+  }
+  function showStats(st) {
+    $('stat').style.display = '';
+    const pk = stab.peakShake();
+    $('stat').innerHTML = `Shake removed: <b>${Math.round(Math.max(0, st.reduction) * 100)}%</b><br>Zoom: ${Math.round(stab.result.zoom * 100)}% · Peak shake: ${Math.round(pk.px)} px / ${pk.deg.toFixed(1)}°`;
+  }
+
+  // ---------- analyse ----------
+  $('go').onclick = async () => {
+    if (busy || !stab) return;
+    stop(); busy = true; $('go').disabled = true; $('export').disabled = true;
+    setStatus('Analysing camera motion…');
+    const t0 = performance.now();
+    const ac = new AbortController(); $('cancel').style.display = ''; $('cancel').onclick = () => ac.abort();
+    try {
+      stab.opts = cur();
+      const st = await stab.analyze({ signal: ac.signal, onProgress: p => { setProg(p); setStatus(`Analysing camera motion… ${Math.round(p * 100)}%`); } });
+      analysed = true; showStats(st);
+      setStatus(`Done in ${((performance.now() - t0) / 1000).toFixed(1)} s. Press Play, or switch modes. Changes apply instantly.`);
+      $('export').disabled = false; $('cmp').checked = true;
+      await stab._seek(0); draw(0);
+    } catch (e) { setStatus(e.message === 'aborted' ? 'Analysis cancelled.' : 'Analysis failed: ' + e.message); }
+    $('cancel').style.display = 'none';
+    busy = false; $('go').disabled = false;
+  };
+
+  // ---------- preview ----------
+  function draw(t) {
+    if (!video) return;
+    const W = view.width, H = view.height, cmp = $('cmp').checked && analysed;
+    $('bL').style.display = $('bR').style.display = cmp ? '' : 'none';
+    if (!cmp) {
+      if (analysed) stab.drawFrame(ctx, video, t, W, H); else ctx.drawImage(video, 0, 0, W, H);
+    } else {
+      // left: original, right: stabilized — each half shows the frame letterboxed
+      const off = drawOff(W, H); stab.drawFrame(off.getContext('2d'), video, t, W, H);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      const h2 = H / 2, y = (H - h2) / 2;
+      ctx.drawImage(video, 0, y, W / 2, h2);
+      ctx.drawImage(off, W / 2, y, W / 2, h2);
+      ctx.fillStyle = '#ff7a1a'; ctx.fillRect(W / 2 - 1, y, 2, h2);
+    }
+    $('seek').value = Math.round(1000 * t / video.duration);
+  }
+  let _off; function drawOff(W, H) { if (!_off) _off = document.createElement('canvas'); if (_off.width !== W) { _off.width = W; _off.height = H; } return _off; }
+  $('cmp').onchange = () => !playing && draw(video.currentTime);
+
+  $('play').onclick = () => playing ? stop() : start();
+  function start() {
+    if (!video || busy) return;
+    if (video.ended || video.currentTime >= video.duration - 0.05) video.currentTime = 0;
+    playing = true; $('play').textContent = '❚❚ Pause';
+    video.muted = true; video.loop = false;
+    const tick = (now, meta) => {
+      if (!playing) return; // stale callback after pause/seek/export: don't touch the video
+      draw(meta.mediaTime);
+      if (!video.ended) video.requestVideoFrameCallback(tick); else stop();
+    };
+    video.requestVideoFrameCallback(tick);
+    video.play().catch(stop);
+  }
+  function stop() { playing = false; if (video) video.pause(); $('play').textContent = '▶ Play'; }
+  $('seek').oninput = () => { if (!video) return; stop(); video.currentTime = $('seek').value / 1000 * video.duration; };
+
+  // ---------- export ----------
+  $('export').onclick = async () => {
+    if (busy || !analysed) return;
+    stop(); busy = true; $('export').disabled = true; $('go').disabled = true;
+    setStatus('Rendering the stabilized video (plays through once in real time)…');
+    try {
+      const blob = await stab.export({ onProgress: p => { setProg(p); draw(video.currentTime); } });
+      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+      const name = `stabilized-${Date.now()}.${ext}`;
+      await saveBlob(blob, name);
+    } catch (e) { setStatus('Export failed: ' + (e.message || e.code || e)); }
+    busy = false; $('export').disabled = false; $('go').disabled = false;
+  };
+  async function saveBlob(blob, name) {
+    let dl = null;
+    try { dl = window.claude && window.claude.use ? await Promise.race([window.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 3000))]) : null; } catch (e) {}
+    if (dl) {
+      try { await dl.save({ filename: name, data: blob }); setStatus('Saved ' + name); }
+      catch (e) { setStatus(e.code === 'declined' ? 'Save cancelled.' : 'Could not save: ' + (e.message || e.code)); }
+      return;
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setStatus('Exported ' + name);
+  }
+
+  function setStatus(s) { $('status').textContent = s; }
+  function setProg(p) { $('prog').style.width = (p * 100).toFixed(1) + '%'; }
+  window.__mk = { get stab() { return stab; }, open };
+})();
+</script>
+</body>
+</html>

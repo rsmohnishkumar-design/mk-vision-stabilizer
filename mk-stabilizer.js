@@ -645,8 +645,12 @@ return { makeFrame, estimateMotion, solvePath, S };
       this.drawFrame(ctx, v, 0, w, h);
       rec.start(250);
       v.requestVideoFrameCallback(draw);
+      // If anything else pauses the element mid-render, resume so the export always completes.
+      const resume = () => { if (!v.ended) v.play().then(() => v.requestVideoFrameCallback(draw)).catch(() => {}); };
+      v.addEventListener('pause', resume);
       await v.play();
       await new Promise(r => (v.onended = r));
+      v.removeEventListener('pause', resume);
       rec.stop(); await finished;
       v.muted = true; v.onended = null;
       onProgress && onProgress(1);
